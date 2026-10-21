@@ -50,7 +50,7 @@ export const envSchema = z.object({
   USESEND_API_URL: z.string().url().default('https://mail.hermanyiqunliang.com'),
   USESEND_API_KEY: z.string().default(''),
   NOTIFY_EMAIL_TO: z.string().default(''),
-  NOTIFY_EMAIL_FROM: z.string().default('IRCC Tracker <ircc@hermanliang.dev>'),
+  NOTIFY_EMAIL_FROM: z.string().default('IRCC Tracker <noreply@hermanliang.dev>'),
   NOTIFY_ERROR_AFTER: z.coerce.number().int().min(1).default(2),
 });
 
