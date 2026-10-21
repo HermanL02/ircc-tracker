@@ -7,6 +7,9 @@ COPY . .
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
+LABEL org.opencontainers.image.source="https://github.com/HermanL02/ircc-tracker" \
+      org.opencontainers.image.description="Automatic IRCC application status tracker with email alerts" \
+      org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production PORT=3000 BROWSER_PROFILE_DIR=/data/browser-profile
 WORKDIR /app
 COPY --from=build /app/package.json ./

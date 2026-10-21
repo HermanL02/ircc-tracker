@@ -17,12 +17,13 @@ Works with any application shown in the [IRCC application status tracker](https:
 - [Features](#features)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
-- [Quick start](#quick-start)
+- [Quick start with Docker](#quick-start-with-docker)
+- [Quick start without Docker](#quick-start-without-docker)
 - [Run it in the background (Linux)](#run-it-in-the-background-linux)
 - [Configuration](#configuration)
 - [Email alerts](#email-alerts)
 - [HTTP API](#http-api)
-- [Running on a server or in Docker](#running-on-a-server-or-in-docker)
+- [Running on a cloud server](#running-on-a-cloud-server)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
 - [Security and privacy](#security-and-privacy)
@@ -55,14 +56,49 @@ GCKey protects sign-in with an invisible **hCaptcha** that rejects headless brow
 
 ## Requirements
 
-- **Linux** (tested on Ubuntu 24.04+) on a **home or residential internet connection**. Canada.ca blocks cloud and datacenter IPs; see [Running on a server](#running-on-a-server-or-in-docker).
-- **Node.js 22+** and **npm 11+**
-- **Google Chrome**, installed below with `npx playwright install chrome`
-- **Xvfb** and **PostgreSQL**: `sudo apt install -y xvfb postgresql`
+- A computer on a **home or residential internet connection**. Canada.ca blocks cloud and datacenter IPs; see [Running on a cloud server](#running-on-a-cloud-server).
+- **With Docker** (easiest): Docker with Compose on an **x86-64** machine (Linux, Windows with WSL 2, or an Intel Mac). Google Chrome has no ARM Linux build, so a Raspberry Pi or Apple Silicon Mac won't work, or will only run very slowly under emulation.
+- **Without Docker**: Linux with Node.js 22+, npm 11+, Xvfb and PostgreSQL (`sudo apt install -y xvfb postgresql`)
 - A **GCKey** account with **two-factor authentication through an authenticator app**, and access to the authenticator's **secret key** (see the [FAQ](#how-do-i-get-my-gckey-authenticator-secret))
 - Your application details: **UCI**, **application number**, date of birth, country of birth
 
-## Quick start
+## Quick start with Docker
+
+```bash
+git clone https://github.com/HermanL02/ircc-tracker.git
+cd ircc-tracker
+cp .env.example .env
+chmod 600 .env
+$EDITOR .env
+```
+
+In `.env`, fill in at least:
+
+- `POSTGRES_PASSWORD`: letters and digits only, e.g. the output of `openssl rand -hex 24`
+- `API_KEYS`: e.g. the output of `openssl rand -hex 32`
+- `GCKEY_USERNAME`, `GCKEY_PASSWORD`, `GCKEY_TOTP_SECRET`
+- all the `IRCC_*` values
+- `CHECK_TIMEZONE`, e.g. `America/Toronto`. Containers run in UTC otherwise.
+- the email settings, if you want alerts
+
+Then start it:
+
+```bash
+docker compose up -d
+docker compose logs -f tracker      # wait for "baseline saved"
+```
+
+This pulls the prebuilt image `ghcr.io/hermanl02/ircc-tracker`. Use `docker compose up -d --build` to build it yourself instead. Chrome runs headed on a virtual display inside the container, so you won't see a window.
+
+```bash
+curl -s -H "x-api-key: <your API key>" localhost:3460/status   # latest status
+docker compose pull && docker compose up -d                  # update to the newest version
+docker compose down                                          # stop (data is kept in Docker volumes)
+```
+
+> Compose reads `.env` literally, except that `$` starts a variable. If your GCKey password contains `$`, write it as `$$`.
+
+## Quick start without Docker
 
 ```bash
 git clone https://github.com/HermanL02/ircc-tracker.git
@@ -194,15 +230,9 @@ curl -s -H "x-api-key: $KEY" localhost:3460/status
 curl -s -X POST -H "x-api-key: $KEY" localhost:3460/checks
 ```
 
-## Running on a server or in Docker
+## Running on a cloud server
 
-A `Dockerfile` (headed Chrome on Xvfb) and a `docker-compose.yml` (tracker + PostgreSQL, compatible with [Coolify](https://coolify.io)) are included:
-
-```bash
-docker compose up -d --build
-```
-
-**However, Canada.ca blocks datacenter IP addresses.** From AWS, Google Cloud, Azure and similar providers, `ircc-services.canada.ca` returns `403 ERROR: The request could not be satisfied`. Google Cloud's Iowa and Toronto regions were both tested. On a server, set `BROWSER_PROXY_URL` to a Canadian **residential or ISP proxy**; only Chrome's traffic uses it. At home you don't need one.
+The same `docker-compose.yml` works on a VPS or with [Coolify](https://coolify.io). However, **Canada.ca blocks datacenter IP addresses**: from AWS, Google Cloud, Azure and similar providers, `ircc-services.canada.ca` returns `403 ERROR: The request could not be satisfied` (Google Cloud's Iowa and Toronto regions were both tested). On a server, set `BROWSER_PROXY_URL` to a Canadian **residential or ISP proxy**; only Chrome's traffic uses it. At home you don't need one.
 
 ## Troubleshooting
 
