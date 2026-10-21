@@ -93,6 +93,12 @@ export class TrackerService {
     };
   }
 
+  // When the last successful check finished, or null if there has never been one.
+  async lastSuccessAt(): Promise<Date | null> {
+    const last = await this.checks.findOne({ where: { status: 'ok' }, order: { startedAt: 'DESC' } });
+    return last?.finishedAt ?? null;
+  }
+
   list(limit: number) {
     return this.checks.find({ order: { startedAt: 'DESC' }, take: limit });
   }
