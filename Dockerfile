@@ -18,7 +18,7 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN npx playwright install --with-deps chrome \
   && apt-get install -y --no-install-recommends xvfb fonts-noto-cjk \
   && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /data/browser-profile && chown -R node:node /data
+  && mkdir -p /data/browser-profile /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && chown -R node:node /data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
