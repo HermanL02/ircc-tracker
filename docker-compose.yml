@@ -19,6 +19,8 @@ services:
   tracker:
     build: .
     restart: unless-stopped
+    # tini as PID 1 reaps Chrome's child processes.
+    init: true
     # Chrome needs more shared memory than Docker's 64 MB default.
     shm_size: 1gb
     environment:
