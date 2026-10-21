@@ -1,0 +1,10 @@
+# Rendered by scripts/setup.sh. Private Postgres cluster for IRCC Tracker, run as your user.
+[Unit]
+Description=Postgres for IRCC Tracker (@NAME@)
+
+[Service]
+ExecStart=@PG_BIN@/postgres -D @DATA_DIR@/pg -p @PG_PORT@ -k @DATA_DIR@/pg -c listen_addresses=127.0.0.1
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

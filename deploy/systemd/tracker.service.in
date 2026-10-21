@@ -1,0 +1,17 @@
+# Rendered by scripts/setup.sh. Chrome runs headed on an invisible Xvfb display
+# (GCKey's hCaptcha rejects true headless), so no window appears.
+[Unit]
+Description=IRCC Tracker (@NAME@)
+Requires=@NAME@-postgres.service
+After=@NAME@-postgres.service network-online.target
+
+[Service]
+WorkingDirectory=@APP_DIR@
+# Configuration is read from @APP_DIR@/.env
+ExecStart=@APP_DIR@/docker-entrypoint.sh @NODE_BIN@ dist/main.js
+Environment=XVFB_DISPLAY=@DISPLAY_NUM@
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

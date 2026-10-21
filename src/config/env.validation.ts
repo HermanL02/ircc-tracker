@@ -22,11 +22,13 @@ export const envSchema = z.object({
   GCKEY_USERNAME: z.string().min(1),
   GCKEY_PASSWORD: z.string().min(1),
 
-  // Base32 secret of the GCKey authenticator (the "secret" in its otpauth:// QR code).
+  // The GCKey authenticator secret: either the base32 secret or the whole otpauth:// link
+  // from the QR code shown when you set up the authenticator app.
   GCKEY_TOTP_SECRET: z
     .string()
+    .transform((v) => (v.startsWith('otpauth://') ? (new URL(v).searchParams.get('secret') ?? '') : v))
     .transform((v) => v.replace(/[\s-]/g, '').replace(/=+$/, '').toUpperCase())
-    .pipe(z.string().regex(/^[A-Z2-7]{16,}$/, 'GCKEY_TOTP_SECRET must be a base32 secret')),
+    .pipe(z.string().regex(/^[A-Z2-7]{16,}$/, 'GCKEY_TOTP_SECRET must be a base32 secret or an otpauth:// link')),
 
   // Application lookup form
   IRCC_SURNAME: z.string().min(1),
@@ -46,17 +48,27 @@ export const envSchema = z.object({
   BROWSER_PROFILE_DIR: z.string().default('./.browser-profile'),
 
   CHECK_CRON: z.string().default('17 */2 * * *'),
-  CHECK_TIMEZONE: z.string().default('America/Halifax'),
+  // Defaults to this machine's time zone.
+  CHECK_TIMEZONE: z
+    .string()
+    .default('')
+    .transform((v) => v || Intl.DateTimeFormat().resolvedOptions().timeZone),
   CHECK_ON_BOOT: bool('true'),
 
-  // Optional email alerts through useSend. Leave USESEND_API_KEY empty to disable.
-  USESEND_API_URL: z.string().url().default('https://mail.hermanyiqunliang.com'),
+  // Optional email alerts through a useSend instance (https://usesend.com).
+  // Leave USESEND_API_KEY empty to disable email; the other three are then ignored.
+  USESEND_API_URL: z.union([z.literal(''), z.string().url()]).default(''),
   USESEND_API_KEY: z.string().default(''),
   NOTIFY_EMAIL_TO: z.string().default(''),
-  NOTIFY_EMAIL_FROM: z.string().default('IRCC Tracker <noreply@hermanliang.dev>'),
+  NOTIFY_EMAIL_FROM: z.string().default(''),
   // Also email when nothing changed, with the latest raw responses.
   NOTIFY_EVERY_CHECK: bool('true'),
   NOTIFY_ERROR_AFTER: z.coerce.number().int().min(1).default(2),
+}).superRefine((env, ctx) => {
+  if (!env.USESEND_API_KEY) return;
+  for (const key of ['USESEND_API_URL', 'NOTIFY_EMAIL_TO', 'NOTIFY_EMAIL_FROM'] as const) {
+    if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required when USESEND_API_KEY is set` });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

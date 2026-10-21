@@ -1,10 +1,9 @@
 {
   "name": "ircc-tracker",
   "version": "1.0.0",
-  "description": "Checks an IRCC application on a schedule and emails you when it changes",
-  "author": "",
-  "private": true,
-  "license": "UNLICENSED",
+  "description": "Automatic IRCC application status tracker: signs in with GCKey (2FA), checks your Canada immigration application on a schedule and emails you every change.",
+  "author": "Herman Liang",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "nest build",
@@ -59,5 +58,31 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "keywords": [
+    "ircc",
+    "ircc-tracker",
+    "application-status",
+    "gckey",
+    "canada",
+    "immigration",
+    "express-entry",
+    "pnp",
+    "permanent-residence",
+    "citizenship",
+    "work-permit",
+    "study-permit",
+    "email-alerts",
+    "nestjs",
+    "playwright",
+    "self-hosted"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HermanL02/ircc-tracker.git"
+  },
+  "homepage": "https://github.com/HermanL02/ircc-tracker#readme",
+  "bugs": {
+    "url": "https://github.com/HermanL02/ircc-tracker/issues"
   }
 }
