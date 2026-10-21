@@ -5,7 +5,7 @@ Checks an IRCC application on the [application status tracker](https://www.canad
 Each check signs in like a person would:
 
 1. GCKey username and password
-2. Two-factor code, read from [Authkeep](https://github.com/HermanL02/authkeep)
+2. Two-factor code, generated locally (RFC 6238) from `GCKEY_TOTP_SECRET`
 3. Role "Principal applicant", then the application lookup form
 4. View application → History
 

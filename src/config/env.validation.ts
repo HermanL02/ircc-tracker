@@ -22,10 +22,11 @@ export const envSchema = z.object({
   GCKEY_USERNAME: z.string().min(1),
   GCKEY_PASSWORD: z.string().min(1),
 
-  // The GCKey second factor comes from Authkeep.
-  AUTHKEEP_API_URL: z.string().url(),
-  AUTHKEEP_API_KEY: z.string().min(1),
-  AUTHKEEP_TOTP_LABEL: z.string().min(1),
+  // Base32 secret of the GCKey authenticator (the "secret" in its otpauth:// QR code).
+  GCKEY_TOTP_SECRET: z
+    .string()
+    .transform((v) => v.replace(/[\s-]/g, '').replace(/=+$/, '').toUpperCase())
+    .pipe(z.string().regex(/^[A-Z2-7]{16,}$/, 'GCKEY_TOTP_SECRET must be a base32 secret')),
 
   // Application lookup form
   IRCC_SURNAME: z.string().min(1),

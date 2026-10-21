@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { join } from 'node:path';
 import { chromium, type Page, type Response } from 'playwright';
-import { AuthkeepClient } from '../authkeep/authkeep.client.js';
 import type { Env } from '../config/env.validation.js';
+import { TotpService } from '../totp/totp.service.js';
 import type { ApplicationDetails, HistoryItem, Snapshot } from '../tracker/lib/snapshot.js';
 
 const START_URL = 'https://ircc-services.canada.ca/2/ast';
@@ -11,14 +11,14 @@ const APEX_PATH = '/webruntime/api/apex/execute';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // Drives the IRCC application status tracker the way a person would:
-// GCKey sign-in → two-factor (code from Authkeep) → role → application lookup → history.
+// GCKey sign-in → two-factor (code generated locally) → role → application lookup → history.
 @Injectable()
 export class IrccPortalService {
   private readonly logger = new Logger(IrccPortalService.name);
 
   constructor(
     private readonly config: ConfigService<Env, true>,
-    private readonly authkeep: AuthkeepClient,
+    private readonly totp: TotpService,
   ) {}
 
   async fetchSnapshot(): Promise<Snapshot> {
@@ -57,7 +57,7 @@ export class IrccPortalService {
 
       step = 'two-factor';
       await page.waitForSelector('#code');
-      await page.fill('#code', await this.authkeep.currentCode());
+      await page.fill('#code', await this.totp.currentCode());
       await page.click('#continue-btn');
       await page.waitForSelector('h1:has-text("Authentication success")');
       await page.click('#continue-btn');
