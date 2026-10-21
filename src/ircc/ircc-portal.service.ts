@@ -28,7 +28,8 @@ export class IrccPortalService {
     const context = await chromium.launchPersistentContext(env('BROWSER_PROFILE_DIR'), {
       headless: env('BROWSER_HEADLESS'),
       channel: env('BROWSER_CHANNEL') || undefined,
-      args: ['--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage'],
+      // --ozone-platform=x11 keeps Chrome on DISPLAY (Xvfb) even when a Wayland session is around.
+      args: ['--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--ozone-platform=x11'],
       ignoreDefaultArgs: ['--enable-automation'],
       viewport: { width: 1280, height: 900 },
       locale: 'en-CA',
