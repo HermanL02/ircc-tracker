@@ -45,7 +45,7 @@ export const envSchema = z.object({
   // Mount this as a volume in Docker; it also holds last-failure.png for debugging.
   BROWSER_PROFILE_DIR: z.string().default('./.browser-profile'),
 
-  CHECK_CRON: z.string().default('17 */6 * * *'),
+  CHECK_CRON: z.string().default('17 */2 * * *'),
   CHECK_TIMEZONE: z.string().default('America/Halifax'),
   CHECK_ON_BOOT: bool('true'),
 
@@ -54,6 +54,8 @@ export const envSchema = z.object({
   USESEND_API_KEY: z.string().default(''),
   NOTIFY_EMAIL_TO: z.string().default(''),
   NOTIFY_EMAIL_FROM: z.string().default('IRCC Tracker <noreply@hermanliang.dev>'),
+  // Also email when nothing changed, with the latest raw responses.
+  NOTIFY_EVERY_CHECK: bool('true'),
   NOTIFY_ERROR_AFTER: z.coerce.number().int().min(1).default(2),
 });
 

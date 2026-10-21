@@ -1,0 +1,16 @@
+# IRCC Tracker as a systemd user service. Chrome runs headed on an invisible
+# Xvfb display (GCKey's hCaptcha rejects true headless), so no window appears.
+[Unit]
+Description=IRCC Tracker
+Requires=ircc-postgres.service
+After=ircc-postgres.service network-online.target
+
+[Service]
+WorkingDirectory=%h/Downloads/ircc-tracker
+# Reads .env from the working directory.
+ExecStart=%h/Downloads/ircc-tracker/docker-entrypoint.sh %h/.nvm/versions/node/v22.23.2/bin/node dist/main.js
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

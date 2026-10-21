@@ -51,8 +51,16 @@ export class TrackerService {
       await this.checks.save(check);
       this.logger.log(`Check ${check.id}: ${changes.length ? `${changes.length} change(s)` : previous ? 'no changes' : 'baseline saved'}`);
 
-      if (!previous) await this.notifier.send('IRCC tracker is watching your application', this.summary(snapshot, ['Baseline saved. You will get an email when anything changes.']));
-      else if (changes.length) await this.notifier.send(`IRCC update: ${changes[0]}`, this.summary(snapshot, changes));
+      if (!previous) {
+        await this.notifier.send('IRCC tracker is watching your application', this.summary(snapshot, ['Baseline saved.'], true));
+      } else if (changes.length) {
+        await this.notifier.send(`IRCC update: ${changes[0]}`, this.summary(snapshot, changes, true));
+      } else if (this.config.get('NOTIFY_EVERY_CHECK', { infer: true })) {
+        await this.notifier.send(
+          `IRCC: no update (${snapshot.details.app.appStatus})`,
+          this.summary(snapshot, ['No update since the last check.'], true),
+        );
+      }
     } catch (e) {
       Object.assign(check, { status: 'error', finishedAt: new Date(), error: (e as Error).message });
       await this.checks.save(check);
@@ -124,7 +132,7 @@ export class TrackerService {
     }
   }
 
-  private summary(s: Snapshot, lines: string[]): string {
+  private summary(s: Snapshot, lines: string[], withRaw = false): string {
     const app = s.details.app;
     const people = s.details.relations
       .map((r) => `${r.firstName} ${r.lastName}: ${Object.entries(r.milestones).map(([k, v]) => `${k} ${v}`).join(', ')}`)
@@ -136,6 +144,16 @@ export class TrackerService {
       people,
       '',
       'https://ircc-services.canada.ca/2/ast',
+      ...(withRaw
+        ? [
+            '',
+            '--- Latest getApplicationDetailsForLwc response ---',
+            JSON.stringify(s.details, null, 2),
+            '',
+            '--- Latest getRawApplicationHistory response ---',
+            JSON.stringify(s.history, null, 2),
+          ]
+        : []),
     ].join('\n');
   }
 }

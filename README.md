@@ -1,6 +1,6 @@
 # IRCC Tracker
 
-Checks an IRCC application on the [application status tracker](https://www.canada.ca/en/immigration-refugees-citizenship/services/application/application-status-tracker.html) on a schedule, stores every result in Postgres, and emails you when anything changes.
+Checks an IRCC application on the [application status tracker](https://www.canada.ca/en/immigration-refugees-citizenship/services/application/application-status-tracker.html) on a schedule, stores every result in Postgres, and emails you after every check: what changed, or "No update" with the latest raw responses.
 
 Each check signs in like a person would:
 
@@ -38,16 +38,47 @@ Everything comes from environment variables; see [`.env.example`](.env.example).
 
 Email is optional and goes through a [useSend](https://usesend.com) instance. Set `USESEND_API_KEY` and `NOTIFY_EMAIL_TO` to turn it on. You get an email when tracking starts, on every change, and once after `NOTIFY_ERROR_AFTER` failed checks in a row.
 
-## Run locally
+## Run locally as a service (how it runs today)
+
+Canada.ca blocks datacenter IPs, so the tracker runs on a home machine as two systemd **user** services: a private Postgres cluster and the tracker itself. Chrome runs headed on an invisible Xvfb display, so no window appears.
 
 ```bash
-cp .env.example .env     # fill it in
-npm install              # npm 11+
-npx playwright install chrome
+sudo apt install -y xvfb postgresql          # once
+npm install && npx playwright install chrome && npm run build
+
+# Private Postgres cluster on 127.0.0.1:5433, owned by your user
+D=~/.local/share/ircc-tracker; mkdir -p $D
+openssl rand -hex 24 > $D/.pgpass-ircc && chmod 600 $D/.pgpass-ircc
+/usr/lib/postgresql/18/bin/initdb -D $D/pg -U ircc --auth=scram-sha-256 --pwfile=$D/.pgpass-ircc
+
+cp deploy/systemd/*.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now ircc-postgres
+PGPASSWORD=$(cat $D/.pgpass-ircc) psql -h 127.0.0.1 -p 5433 -U ircc -d postgres -c "create database ircc"
+
+cp .env.example .env    # fill it in: DATABASE_URL=postgres://ircc:<password>@127.0.0.1:5433/ircc, HOST=127.0.0.1
+systemctl --user enable --now ircc-tracker
+loginctl enable-linger $USER   # keep running when logged out
+```
+
+Useful commands:
+
+```bash
+journalctl --user -u ircc-tracker -f          # logs
+systemctl --user restart ircc-tracker         # after editing .env or rebuilding
+curl -H "x-api-key: $KEY" localhost:3460/status
+curl -X POST -H "x-api-key: $KEY" localhost:3460/checks   # check now
+```
+
+Checks only run while the machine is awake.
+
+## Development
+
+```bash
 npm run start:dev        # headed Chrome opens on your display
 npm test
 ```
 
-## Deploy on Coolify
+## Deploy on a server
 
-Create a **Docker Compose** application from this repo (base directory `/`). Set the non-`SERVICE_*` variables from `docker-compose.yml` under Environment Variables, give the `tracker` service a domain on port 3000, and deploy. The API key is generated as `SERVICE_PASSWORD_64_APIKEY`.
+The Docker image and `docker-compose.yml` still work (Coolify: Docker Compose build pack), but a server **must** set `BROWSER_PROXY_URL` to a residential proxy, because Canada.ca returns 403 to datacenter IPs.
