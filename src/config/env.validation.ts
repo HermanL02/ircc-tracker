@@ -39,6 +39,9 @@ export const envSchema = z.object({
   // hCaptcha rejects headless Chrome, so production runs headed under Xvfb.
   BROWSER_HEADLESS: bool('false'),
   BROWSER_CHANNEL: z.string().default('chrome'),
+  // Optional proxy for Chrome, e.g. http://user:pass@host:port or socks5://host:port.
+  // Canada.ca blocks datacenter IPs, so a server deployment needs a residential proxy.
+  BROWSER_PROXY_URL: z.union([z.literal(''), z.string().url()]).default(''),
   // Mount this as a volume in Docker; it also holds last-failure.png for debugging.
   BROWSER_PROFILE_DIR: z.string().default('./.browser-profile'),
 

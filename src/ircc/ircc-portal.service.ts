@@ -32,6 +32,7 @@ export class IrccPortalService {
       ignoreDefaultArgs: ['--enable-automation'],
       viewport: { width: 1280, height: 900 },
       locale: 'en-CA',
+      proxy: this.proxy(env('BROWSER_PROXY_URL')),
     });
     await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
     // Start signed out every time; the tracker session is not reused.
@@ -99,6 +100,16 @@ export class IrccPortalService {
     } finally {
       await context.close();
     }
+  }
+
+  private proxy(raw: string) {
+    if (!raw) return undefined;
+    const url = new URL(raw);
+    return {
+      server: `${url.protocol}//${url.host}`,
+      username: decodeURIComponent(url.username) || undefined,
+      password: decodeURIComponent(url.password) || undefined,
+    };
   }
 
   private async pickOption(page: Page, selector: string, label: string) {

@@ -17,6 +17,8 @@ Built with NestJS 12, TypeORM, Playwright and Postgres.
 
 GCKey uses an invisible hCaptcha that rejects headless and automation-flagged browsers. The tracker therefore runs **real Google Chrome, headed, on an Xvfb virtual display**, with the automation flags removed. It also uses a **persistent browser profile** so later sign-ins look like a returning visitor. If a step fails, a screenshot is saved to `$BROWSER_PROFILE_DIR/last-failure.png`.
 
+**Canada.ca blocks datacenter IPs.** Requests from GCP (Iowa and Toronto both tested) get a CloudFront 403. On a server, set `BROWSER_PROXY_URL` to a residential proxy; only Chrome's traffic uses it.
+
 The lookup form allows 3 attempts per 15 minutes. Checks never overlap, and the default schedule is every 6 hours.
 
 ## API
