@@ -32,6 +32,7 @@ describe('tenantCreateSchema', () => {
   });
 
   it.each([
+    ['whitespace-only name', { name: ' ' }],
     ['uppercase id', { id: 'Mom' }],
     ['id over 64 chars', { id: 'a'.repeat(65) }],
     ['non-digit uci', { uci: '12-34' }],
@@ -39,7 +40,7 @@ describe('tenantCreateSchema', () => {
     ['empty notifyTo', { notifyTo: [] }],
     ['non-email notifyTo', { notifyTo: ['x'] }],
     ['bad totp secret', { gckeyTotpSecret: 'not-base32!' }],
-    ['malformed otpauth link', { gckeyTotpSecret: 'otpauth://%' }],
+    ['malformed otpauth link', { gckeyTotpSecret: 'otpauth://[::' }],
   ])('rejects %s', (_label, override) => {
     expect(tenantCreateSchema.safeParse({ ...validTenant, ...override }).success).toBe(false);
   });

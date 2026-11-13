@@ -30,21 +30,21 @@ const tenantShape = z.object({
     .string()
     .max(64)
     .regex(/^[a-z0-9][a-z0-9-]*$/, 'must be lowercase letters, digits and hyphens, starting with a letter or digit'),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   enabled: z.boolean(),
 
   // GCKey sign-in
-  gckeyUsername: z.string().min(1),
+  gckeyUsername: z.string().trim().min(1),
   gckeyPassword: z.string().min(1),
   gckeyTotpSecret: totpSecret,
 
   // Application lookup form
-  surname: z.string().min(1),
-  givenName: z.string().min(1),
+  surname: z.string().trim().min(1),
+  givenName: z.string().trim().min(1),
   uci,
-  applicationNumber: z.string().min(1),
+  applicationNumber: z.string().trim().min(1),
   dateOfBirth,
-  countryOfBirth: z.string().min(1),
+  countryOfBirth: z.string().trim().min(1),
 
   notifyTo: z.array(z.email()).min(1),
 });
