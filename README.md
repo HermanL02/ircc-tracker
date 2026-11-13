@@ -227,6 +227,8 @@ One tracker can watch several applications, for example yours and your parents'.
 
 **Your first application.** On the first start after installing (or upgrading), the tracker creates the application `default` from the `GCKEY_*`, `IRCC_*` and `NOTIFY_EMAIL_TO` values in `.env`, and earlier checks become its history. This happens only once: after that, those `.env` values are ignored, and deleting `default` doesn't bring it back on the next start. Existing setups keep working with no change to `.env`.
 
+**Upgrading from a single-application install.** Email subjects now start with the application's name, e.g. `[Default] IRCC update: ...` instead of `IRCC update: ...`. If you filter or label these emails in your inbox, you may need to update those filters.
+
 **Add an application.** `id` is a short name you choose (lowercase letters, digits and hyphens; it can't be changed later). `name` starts each email subject.
 
 ```bash
@@ -269,7 +271,7 @@ curl -s -X POST -H "x-api-key: $KEY" localhost:3460/tenants/mom/checks   # {"pos
 curl -s -H "x-api-key: $KEY" "localhost:3460/tenants/mom/checks?limit=1" # the result, once it ran
 ```
 
-**One check at a time.** All checks (scheduled, at start-up and "check now") wait in one queue, and only one Chrome runs at a time. Between two checks the tracker pauses `CHECK_TENANT_GAP_SECONDS` (default 300, i.e. 5 minutes), because the lookup form allows 3 attempts per 15 minutes and IRCC may count them per IP address rather than per account. So with the default 2-hour schedule, one tracker fits about 20 applications. "Check now" puts the application at the front of the queue, but it still waits for the pause, so it can take up to 5 minutes to start. `POST /checks` queues every enabled application; one that is already waiting isn't queued twice.
+**One check at a time.** All checks (scheduled, at start-up and "check now") wait in one queue, and only one Chrome runs at a time. Between two checks the tracker pauses `CHECK_TENANT_GAP_SECONDS` (default 300, i.e. 5 minutes), because the lookup form allows 3 attempts per 15 minutes and IRCC may count them per IP address rather than per account. So with the default 2-hour schedule, one tracker fits about 20 applications. "Check now" puts the application at the front of the queue, but it still waits for the pause, so it can take up to about 6 minutes to start (the running check plus the pause). `POST /checks` queues every enabled application; one that is already waiting isn't queued twice.
 
 **Changing whose application it is.** A `PATCH` that changes `gckeyUsername`, `uci`, `applicationNumber`, `surname`, `givenName`, `dateOfBirth` or `countryOfBirth` starts a fresh baseline: the next successful check sends the "watching your application" email instead of a list of differences from the old application. Earlier checks stay in the history. Changing the name, recipients, password or secret doesn't reset anything.
 
