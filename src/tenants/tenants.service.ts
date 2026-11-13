@@ -65,9 +65,10 @@ export class TenantsService implements OnApplicationBootstrap {
 
   // Omitted fields, including the password and TOTP secret, are left unchanged.
   async update(id: string, patch: TenantUpdate): Promise<PublicTenant> {
-    if (!(await this.tenants.existsBy({ id }))) throw new NotFoundException(`Tenant ${id} not found`);
+    const stored = await this.tenants.findOneBy({ id });
+    if (!stored) throw new NotFoundException(`Tenant ${id} not found`);
     const changes: Partial<Tenant> = { ...patch };
-    if (resetsBaseline(patch)) changes.baselineAfter = new Date();
+    if (resetsBaseline(stored, patch)) changes.baselineAfter = new Date();
     if (Object.keys(changes).length) await this.tenants.update(id, changes).catch(rethrowBadData);
     return this.get(id);
   }
@@ -76,6 +77,10 @@ export class TenantsService implements OnApplicationBootstrap {
   async remove(id: string): Promise<void> {
     const { affected } = await this.tenants.delete(id);
     if (!affected) throw new NotFoundException(`Tenant ${id} not found`);
+  }
+
+  async isEnabled(id: string): Promise<boolean> {
+    return (await this.tenants.findOneBy({ id }))?.enabled === true;
   }
 
   async listEnabledIds(): Promise<string[]> {
