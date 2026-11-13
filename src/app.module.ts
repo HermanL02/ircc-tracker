@@ -7,6 +7,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard.js';
 import { envSchema, type Env } from './config/env.validation.js';
 import { typeormOptions } from './database/typeorm.options.js';
 import { HealthModule } from './health/health.module.js';
+import { TenantsModule } from './tenants/tenants.module.js';
 import { TrackerModule } from './tracker/tracker.module.js';
 
 @Module({
@@ -18,6 +19,7 @@ import { TrackerModule } from './tracker/tracker.module.js';
         typeormOptions(config.get('DATABASE_URL', { infer: true }), config.get('DATABASE_SSL', { infer: true })),
     }),
     ScheduleModule.forRoot(),
+    TenantsModule,
     TrackerModule,
     HealthModule,
   ],
