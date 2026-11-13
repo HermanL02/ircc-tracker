@@ -86,16 +86,19 @@ describe('RunQueue', () => {
     expect(runs[1].start).toBe(runs[0].end + 300_000);
   });
 
-  it('de-duplicates', () => {
+  it('de-duplicates', async () => {
     const { deps } = makeDeps();
     const queue = new RunQueue(deps);
-    queue.enqueue('x', 'schedule'); // becomes current once the worker starts
+    // The worker has not taken an entry yet, so 'x' is still pending here.
+    queue.enqueue('x', 'schedule');
     const first = queue.enqueue('a', 'schedule');
     queue.enqueue('b', 'schedule');
     const second = queue.enqueue('a', 'manual');
 
+    expect(first).toBe(2);
     expect(second).toBe(first);
-    expect(queue.pending.filter((id) => id === 'a')).toHaveLength(1);
+    expect(queue.pending).toEqual(['x', 'a', 'b']);
+    await queue.whenIdle();
   });
 
   it('front', async () => {
@@ -126,15 +129,41 @@ describe('RunQueue', () => {
     await queue.whenIdle();
   });
 
+  it('a front enqueue made during the gap wait runs next', async () => {
+    const { deps, runs } = makeDeps({ gapMs: 300_000 });
+    const queue = new RunQueue(deps);
+    const baseSleep = deps.sleep.bind(deps);
+    let gapSleeps = 0;
+    deps.sleep = async (ms) => {
+      if (ms === 300_000 && gapSleeps++ === 0) {
+        expect(queue.current).toBeNull();
+        expect(queue.pending).toEqual(['b']);
+        queue.enqueue('c', 'manual', { front: true });
+      }
+      await baseSleep(ms);
+    };
+    queue.enqueue('a', 'schedule');
+    queue.enqueue('b', 'schedule');
+    await queue.whenIdle();
+
+    expect(gapSleeps).toBeGreaterThan(0);
+    expect(runs.map((r) => r.tenantId)).toEqual(['a', 'c', 'b']);
+  });
+
   it('drops tenants that are no longer runnable', async () => {
     const logSpy = vi
       .spyOn(Logger.prototype, 'log')
       .mockImplementation(() => undefined);
-    const { deps, runs } = makeDeps({ isRunnable: async (id) => id !== 'b' });
+    const disabled = new Set<string>();
+    const { deps, runs } = makeDeps({
+      isRunnable: async (id) => !disabled.has(id),
+    });
     const queue = new RunQueue(deps);
     queue.enqueue('a', 'schedule');
     queue.enqueue('b', 'schedule');
     queue.enqueue('c', 'schedule');
+    // 'b' was runnable when enqueued; it is disabled before its turn comes.
+    disabled.add('b');
     await queue.whenIdle();
 
     expect(runs.map((r) => r.tenantId)).toEqual(['a', 'c']);
@@ -171,5 +200,24 @@ describe('RunQueue', () => {
   it('whenIdle resolves immediately when nothing was enqueued', async () => {
     const { deps } = makeDeps();
     await expect(new RunQueue(deps).whenIdle()).resolves.toBeUndefined();
+  });
+});
+
+describe('RunQueue worker failure', () => {
+  it('logs instead of rejecting when an injected dependency throws', async () => {
+    const errorSpy = vi
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const { deps } = makeDeps({ gapMs: 300_000 });
+    deps.sleep = () => Promise.reject(new Error('clock broke'));
+    const queue = new RunQueue(deps);
+    queue.enqueue('a', 'schedule');
+    queue.enqueue('b', 'schedule');
+    await expect(queue.whenIdle()).resolves.toBeUndefined();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('clock broke'),
+    );
+    errorSpy.mockRestore();
   });
 });

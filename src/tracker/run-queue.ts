@@ -75,7 +75,11 @@ export class RunQueue {
   private startWorker(): void {
     if (this.draining) return;
     this.draining = true;
-    this.idle = this.drain();
+    // drain() handles run/isRunnable failures itself; this guards against the
+    // injected sleep/now (or the logger) throwing, so the rejection is never unhandled.
+    this.idle = this.drain().catch((err: unknown) => {
+      this.logger.error(`Run queue worker stopped: ${errorMessage(err)}`);
+    });
   }
 
   private async drain(): Promise<void> {
