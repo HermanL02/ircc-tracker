@@ -1,10 +1,11 @@
 name: Docker image
 
 on:
+  # No pull_request trigger: this public repo builds on a self-hosted runner,
+  # so code from forks must never run there.
   push:
     branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -13,14 +14,14 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Self-hosted runner on Herman's home server (elitebook-ircc-1). Never a GitHub-hosted image.
+    runs-on: [self-hosted, ircc]
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -40,7 +41,7 @@ jobs:
           context: .
           # Google Chrome has no arm64 Linux build.
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
