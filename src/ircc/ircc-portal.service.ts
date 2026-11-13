@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium, type Page, type Response } from 'playwright';
 import type { Env } from '../config/env.validation.js';
+import type { Tenant } from '../tenants/entities/tenant.entity.js';
 import { TotpService } from '../totp/totp.service.js';
 import type { ApplicationDetails, HistoryItem, Snapshot } from '../tracker/lib/snapshot.js';
+import { profileDirFor } from './profile-dir.js';
 
 const START_URL = 'https://ircc-services.canada.ca/2/ast';
 const APEX_PATH = '/webruntime/api/apex/execute';
@@ -21,11 +24,13 @@ export class IrccPortalService {
     private readonly totp: TotpService,
   ) {}
 
-  async fetchSnapshot(): Promise<Snapshot> {
+  async fetchSnapshot(tenant: Tenant): Promise<Snapshot> {
     const env = <K extends keyof Env>(k: K) => this.config.get(k, { infer: true });
+    const profileDir = profileDirFor(env('BROWSER_PROFILE_DIR'), tenant.id);
+    await mkdir(profileDir, { recursive: true });
     // hCaptcha on GCKey rejects headless and automation-flagged browsers.
     // A persistent profile keeps hCaptcha's cookies, so later sign-ins look like a returning visitor.
-    const context = await chromium.launchPersistentContext(env('BROWSER_PROFILE_DIR'), {
+    const context = await chromium.launchPersistentContext(profileDir, {
       headless: env('BROWSER_HEADLESS'),
       channel: env('BROWSER_CHANNEL') || undefined,
       // --ozone-platform=x11 keeps Chrome on DISPLAY (Xvfb) even when a Wayland session is around.
@@ -49,8 +54,8 @@ export class IrccPortalService {
 
       step = 'GCKey sign-in';
       await page.waitForSelector('#token1');
-      await page.fill('#token1', env('GCKEY_USERNAME'));
-      await page.fill('#token2', env('GCKEY_PASSWORD'));
+      await page.fill('#token1', tenant.gckeyUsername);
+      await page.fill('#token2', tenant.gckeyPassword);
       await page.click('#button');
       await page.waitForURL(/\/we\?|gckey_login/, { timeout: 60_000 });
       const heading = (await page.textContent('h1'))?.trim() ?? '';
@@ -59,7 +64,7 @@ export class IrccPortalService {
 
       step = 'two-factor';
       await page.waitForSelector('#code');
-      await page.fill('#code', await this.totp.currentCode());
+      await page.fill('#code', await this.totp.currentCode(tenant.gckeyTotpSecret));
       await page.click('#continue-btn');
       await page.waitForSelector('h1:has-text("Authentication success")');
       await page.click('#continue-btn');
@@ -71,19 +76,19 @@ export class IrccPortalService {
 
       step = 'application lookup';
       await page.waitForSelector('#surname');
-      const [year, month, day] = env('IRCC_DATE_OF_BIRTH').split('-');
-      await page.fill('#surname', env('IRCC_SURNAME'));
-      await page.fill('#givenName', env('IRCC_GIVEN_NAME'));
-      await page.fill('#uci', env('IRCC_UCI'));
-      await page.fill('#applicationNumber', env('IRCC_APPLICATION_NUMBER'));
+      const [year, month, day] = tenant.dateOfBirth.split('-');
+      await page.fill('#surname', tenant.surname);
+      await page.fill('#givenName', tenant.givenName);
+      await page.fill('#uci', tenant.uci);
+      await page.fill('#applicationNumber', tenant.applicationNumber);
       await page.fill('#dateOfBirthYear', year);
       await this.pickOption(page, '#dateOfBirthMonth', MONTHS[Number(month) - 1]);
       await page.fill('#dateOfBirthDay', day);
-      await this.pickOption(page, '#countryOfBirth', env('IRCC_COUNTRY_OF_BIRTH'));
+      await this.pickOption(page, '#countryOfBirth', tenant.countryOfBirth);
       const detailsResponse = this.waitForApex(page, 'getApplicationDetailsForLwc');
       await page.click('#submitButton');
       const details = await this.apexValue<ApplicationDetails>(await detailsResponse);
-      if (!details?.success) throw new Error('Application lookup was rejected (check the IRCC_* values)');
+      if (!details?.success) throw new Error('Application lookup was rejected (check the tenant application details)');
 
       step = 'history';
       await page.getByRole('button', { name: /view application/i }).first().click();
@@ -94,7 +99,7 @@ export class IrccPortalService {
       return { details, history: history ?? [] };
     } catch (e) {
       const where = `${await page.title().catch(() => '?')} (${page.url()})`;
-      const shot = join(env('BROWSER_PROFILE_DIR'), 'last-failure.png');
+      const shot = join(profileDir, 'last-failure.png');
       await page.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
       this.logger.error(`Failed at "${step}" on ${where}: ${(e as Error).message}`);
       throw new Error(`Failed at "${step}" on ${where}: ${(e as Error).message.split('\n')[0]}`);

@@ -1,4 +1,5 @@
 import { generateTotp } from './totp.js';
+import { TotpService } from './totp.service.js';
 
 describe('generateTotp', () => {
   // RFC 6238 Appendix B vectors (SHA1, 8 digits); secret is "12345678901234567890" in base32.
@@ -14,5 +15,18 @@ describe('generateTotp', () => {
 
   it('reports remaining seconds in the window', () => {
     expect(generateTotp({ secret, digits: 6, period: 30, algorithm: 'SHA1' }, 65_000).remainingSeconds).toBe(25);
+  });
+});
+
+describe('TotpService.currentCode', () => {
+  const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+
+  afterEach(() => vi.useRealTimers());
+
+  it('generates the code from the secret it is given', async () => {
+    // t=65s: 25 seconds left in the window, so no wait.
+    vi.useFakeTimers({ now: 65_000 });
+    const expected = generateTotp({ secret, digits: 6, period: 30, algorithm: 'SHA1' }, 65_000).code;
+    await expect(new TotpService().currentCode(secret)).resolves.toBe(expected);
   });
 });
