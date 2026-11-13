@@ -9,6 +9,10 @@ export class Check {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // Nullable only for rows that predate multi-tenancy; the app always sets it.
+  @Column({ name: 'tenant_id', type: 'varchar', length: 64, nullable: true })
+  tenantId: string | null;
+
   @Column({ type: 'varchar', length: 16 })
   trigger: CheckTrigger;
 
