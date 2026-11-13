@@ -1,6 +1,6 @@
 # Multi-tenant IRCC Tracker — design
 
-Date: 2026-11-13 · Status: draft, awaiting approval
+Date: 2026-11-13 · Status: reviewed, awaiting approval
 
 ## Intent
 
@@ -67,29 +67,32 @@ base32 or `otpauth://`, UCI 8–10 digits, DOB `YYYY-MM-DD`), moved into a share
 - `DELETE /tenants/:id` — deletes the tenant and its checks.
 - `GET /tenants/:id/status`, `GET /tenants/:id/checks?limit=`, `POST /tenants/:id/checks` (run one tenant now; blocks ~1 min; 409 if any check is running).
 - `GET /checks/:id` stays global.
-- `POST /checks` — queue a run of all enabled tenants; returns 202 immediately.
+- `POST /checks` — queue all enabled tenants (already-queued tenants are not added twice); returns 202.
 - `GET /status` and `GET /checks` are kept for back-compat and act on the `default` tenant if it exists (404 otherwise).
 
 ### Scheduler and checks
 
-- Each cron tick loads enabled tenants from the DB (so API changes apply on the next tick, no restart) and checks them **one at a time**.
-- A global lock stays: only one Chrome at a time across all tenants and triggers.
-- **Gap between tenants:** `CHECK_TENANT_GAP_SECONDS`, default 300 (keeps ≤3 lookups per 15 min even if IRCC's limit is per IP rather than per account). *My call — we don't know which; 300s is the safe side. With a 2-hour cron this fits ~20 tenants.* If a tick fires while the previous round is still running, it is skipped.
+- **Run queue (my call).** Every check — cron, boot, manual, run-all — goes through one in-process FIFO queue of tenant ids with a single worker. Only one Chrome at a time. A tenant already in the queue is not added again. Manual single-tenant runs go to the front of the queue but still wait for the gap. The old boolean `running` flag is replaced by this queue.
+- Each cron tick loads enabled tenants from the DB (so API changes apply on the next tick, no restart) and enqueues them. If the previous round is still queued, those tenants are de-duplicated rather than the tick being skipped.
+- **Gap between sign-ins:** `CHECK_TENANT_GAP_SECONDS`, default 300, applied between **any** two checks the worker runs (it remembers when the last one ended). This keeps ≤3 lookups per 15 min even if IRCC's limit is per IP rather than per account. *My call — we don't know which; 300s is the safe side. With a 2-hour cron this fits ~20 tenants. Cost: a manual check can wait up to 5 min.*
+- A tenant that is disabled or deleted while queued is dropped when its turn comes. `DELETE` of a tenant whose check is running returns 409.
+- **Baseline reset (my call).** `tenants.baseline_after timestamptz`. A PATCH that changes `gckey_username`, `uci`, `application_number`, `surname`, `given_name`, `date_of_birth` or `country_of_birth` sets it to now(). Change detection only compares against successful checks started after `baseline_after`, so the next check sends the "now watching" email instead of a flood of fake changes. Old checks stay in history. Tenant `id` is immutable.
 - Boot check: per tenant, skipped if that tenant had a success in the last hour.
 - `IrccPortalService.fetchSnapshot(tenant)` takes credentials/details as an argument instead of reading env. `TotpService` takes the secret as an argument.
-- Browser profile per tenant: `${BROWSER_PROFILE_DIR}/tenants/<id>`; failure screenshot goes in that dir. *My call:* the seeded `default` tenant reuses the existing `BROWSER_PROFILE_DIR` root so its hCaptcha cookies survive the upgrade.
+- Browser profile per tenant: `${BROWSER_PROFILE_DIR}/tenants/<id>`; failure screenshot goes in that dir. *My call:* the seeded `default` tenant reuses the existing `BROWSER_PROFILE_DIR` root so its hCaptcha cookies survive the upgrade (the nested `tenants/` folder inside it is ignored by Chrome).
 
 ### Email
 
 - `NotifierService.send(to: string[], subject, text)`. Shared `USESEND_*` and `NOTIFY_EMAIL_FROM`.
 - Change / no-update / baseline emails go to the tenant's `notify_to`; subjects prefixed with the tenant name, e.g. `[Mom] IRCC update: …`.
-- Failure alerts (`NOTIFY_ERROR_AFTER`, counted per tenant) go to the tenant's recipients **and** to `NOTIFY_EMAIL_TO` from `.env` as the admin copy, since a broken password is usually Herman's to fix. *My call.*
+- Failure alerts (`NOTIFY_ERROR_AFTER`, counted per tenant) go to the tenant's recipients **and** to `NOTIFY_EMAIL_TO` from `.env` as the admin copy (de-duplicated), since a broken password is usually Herman's to fix. *My call.*
 - `NOTIFY_EVERY_CHECK` stays global.
 
 ### Upgrade / back-compat
 
 - `GCKEY_*` and `IRCC_*` env vars become optional.
-- On boot, if the `tenants` table is empty and `GCKEY_USERNAME` is set, seed tenant `default` from env (recipients = `NOTIFY_EMAIL_TO`) and assign all checks with `tenant_id IS NULL` to it. After that, env credentials are ignored (logged once) — the DB is the source of truth.
+- **One-time seed (my call).** A tiny `app_state (key text PK, value text)` table holds `env_seeded`. On boot, if `env_seeded` is absent: when `GCKEY_USERNAME` is set, create tenant `default` from env (recipients = `NOTIFY_EMAIL_TO`) and assign all checks with `tenant_id IS NULL` to it; then set `env_seeded` either way. So deleting every tenant later never resurrects `default`. After seeding, env credentials are ignored (logged once) — the DB is the source of truth.
+- If `GCKEY_USERNAME` is set, the other `GCKEY_*`/`IRCC_*` vars stay required and validated as today (boot fails on bad values), via a conditional zod refinement.
 - README: new "Multiple applications" section with curl examples; `.env.example` notes.
 
 ## Left to the builder
