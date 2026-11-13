@@ -8,6 +8,7 @@ import type { Tenant } from '../tenants/entities/tenant.entity.js';
 import { TotpService } from '../totp/totp.service.js';
 import type { ApplicationDetails, HistoryItem, Snapshot } from '../tracker/lib/snapshot.js';
 import { profileDirFor } from './profile-dir.js';
+import { redactSecrets, safeErrorText } from './redact.js';
 
 const START_URL = 'https://ircc-services.canada.ca/2/ast';
 const APEX_PATH = '/webruntime/api/apex/execute';
@@ -46,6 +47,7 @@ export class IrccPortalService {
     const page = context.pages()[0] ?? (await context.newPage());
     page.setDefaultTimeout(45_000);
     let step = 'start';
+    let code: string | undefined;
 
     try {
       step = 'open sign-in';
@@ -64,7 +66,8 @@ export class IrccPortalService {
 
       step = 'two-factor';
       await page.waitForSelector('#code');
-      await page.fill('#code', await this.totp.currentCode(tenant.gckeyTotpSecret));
+      code = await this.totp.currentCode(tenant.gckeyTotpSecret);
+      await page.fill('#code', code);
       await page.click('#continue-btn');
       await page.waitForSelector('h1:has-text("Authentication success")');
       await page.click('#continue-btn');
@@ -101,8 +104,11 @@ export class IrccPortalService {
       const where = `${await page.title().catch(() => '?')} (${page.url()})`;
       const shot = join(profileDir, 'last-failure.png');
       await page.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
-      this.logger.error(`Failed at "${step}" on ${where}: ${(e as Error).message}`);
-      throw new Error(`Failed at "${step}" on ${where}: ${(e as Error).message.split('\n')[0]}`);
+      // Never the full message: Playwright's call log can quote the password or TOTP code.
+      const secrets = [tenant.gckeyPassword, tenant.gckeyTotpSecret, code];
+      const message = redactSecrets(`Failed at "${step}" on ${where}: ${safeErrorText((e as Error).message, secrets)}`, secrets);
+      this.logger.error(message);
+      throw new Error(message);
     } finally {
       await context.close();
     }
