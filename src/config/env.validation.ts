@@ -72,6 +72,7 @@ export const envSchema = z.object({
 
   // Optional email alerts through a useSend instance (https://usesend.com).
   // Leave USESEND_API_KEY empty to disable email; the other three are then ignored.
+  // NOTIFY_EMAIL_TO is optional: it is the admin copy of failure alerts (and the seed tenant's recipients).
   USESEND_API_URL: z.union([z.literal(''), z.string().url()]).default(''),
   USESEND_API_KEY: z.string().default(''),
   NOTIFY_EMAIL_TO: z.string().default(''),
@@ -89,7 +90,7 @@ export const envSchema = z.object({
   }
 
   if (!env.USESEND_API_KEY) return;
-  for (const key of ['USESEND_API_URL', 'NOTIFY_EMAIL_TO', 'NOTIFY_EMAIL_FROM'] as const) {
+  for (const key of ['USESEND_API_URL', 'NOTIFY_EMAIL_FROM'] as const) {
     if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required when USESEND_API_KEY is set` });
   }
 });
