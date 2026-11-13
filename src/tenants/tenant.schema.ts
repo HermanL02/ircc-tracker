@@ -23,14 +23,15 @@ export const totpSecret = z
   .pipe(z.string().regex(/^[A-Z2-7]{16,}$/, 'must be a base32 secret or an otpauth:// link'));
 
 export const uci = z.string().regex(/^\d{8,10}$/, 'must be 8-10 digits');
-export const dateOfBirth = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
+// A real calendar date (1960-02-30 is rejected), so Postgres never sees an invalid `date`.
+export const dateOfBirth = z.iso.date({ error: 'must be a real date as YYYY-MM-DD' });
 
 const tenantShape = z.object({
   id: z
     .string()
     .max(64)
     .regex(/^[a-z0-9][a-z0-9-]*$/, 'must be lowercase letters, digits and hyphens, starting with a letter or digit'),
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(128),
   enabled: z.boolean(),
 
   // GCKey sign-in

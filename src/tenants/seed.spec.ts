@@ -42,6 +42,13 @@ describe('seedFromEnv', () => {
     });
   });
 
+  it('trims free-text fields the same way as the API', () => {
+    const env = envSchema.parse({ ...base, ...credentials, GCKEY_USERNAME: ' user ', IRCC_SURNAME: ' Doe ' });
+    const seed = seedFromEnv(env);
+    expect(seed?.gckeyUsername).toBe('user');
+    expect(seed?.surname).toBe('Doe');
+  });
+
   it('seeds with no recipients when NOTIFY_EMAIL_TO is empty', () => {
     expect(seedFromEnv(envSchema.parse({ ...base, ...credentials }))?.notifyTo).toEqual([]);
   });

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, QueryFailedError, Repository } from 'typeorm';
@@ -13,6 +13,16 @@ import type { TenantCreate, TenantUpdate } from './tenant.schema.js';
 
 const ENV_SEEDED = 'env_seeded';
 const UNIQUE_VIOLATION = '23505';
+
+const pgCode = (e: unknown): string | undefined =>
+  e instanceof QueryFailedError ? (e.driverError as { code?: string }).code : undefined;
+
+// Safety net behind the zod schemas: Postgres "data exception" errors (class 22, e.g. a value
+// too long or an invalid date) are the caller's bad input, so they become 400, not 500.
+const rethrowBadData = (e: unknown): never => {
+  if (pgCode(e)?.startsWith('22')) throw new BadRequestException({ message: 'Invalid tenant', issues: (e as Error).message });
+  throw e;
+};
 
 @Injectable()
 export class TenantsService implements OnApplicationBootstrap {
@@ -45,10 +55,8 @@ export class TenantsService implements OnApplicationBootstrap {
     try {
       await this.tenants.insert(body);
     } catch (e) {
-      if (e instanceof QueryFailedError && (e.driverError as { code?: string }).code === UNIQUE_VIOLATION) {
-        throw new ConflictException(`Tenant ${body.id} already exists`);
-      }
-      throw e;
+      if (pgCode(e) === UNIQUE_VIOLATION) throw new ConflictException(`Tenant ${body.id} already exists`);
+      rethrowBadData(e);
     }
     return this.get(body.id);
   }
@@ -58,7 +66,7 @@ export class TenantsService implements OnApplicationBootstrap {
     if (!(await this.tenants.existsBy({ id }))) throw new NotFoundException(`Tenant ${id} not found`);
     const changes: Partial<Tenant> = { ...patch };
     if (resetsBaseline(patch)) changes.baselineAfter = new Date();
-    if (Object.keys(changes).length) await this.tenants.update(id, changes);
+    if (Object.keys(changes).length) await this.tenants.update(id, changes).catch(rethrowBadData);
     return this.get(id);
   }
 
@@ -89,7 +97,13 @@ export class TenantsService implements OnApplicationBootstrap {
         const { affected } = await manager.update(Check, { tenantId: IsNull() }, { tenantId: SEED_TENANT_ID });
         this.logger.log(`Created tenant "${SEED_TENANT_ID}" from .env and assigned ${affected ?? 0} existing check(s) to it`);
       }
-      await manager.insert(AppState, { key: ENV_SEEDED, value: new Date().toISOString() });
+      await manager
+        .createQueryBuilder()
+        .insert()
+        .into(AppState)
+        .values({ key: ENV_SEEDED, value: new Date().toISOString() })
+        .orIgnore()
+        .execute();
     });
   }
 

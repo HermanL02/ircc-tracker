@@ -37,12 +37,19 @@ describe('tenantCreateSchema', () => {
     ['id over 64 chars', { id: 'a'.repeat(65) }],
     ['non-digit uci', { uci: '12-34' }],
     ['slash date of birth', { dateOfBirth: '1990/01/01' }],
+    ['name over 128 chars', { name: 'a'.repeat(129) }],
+    ['impossible day of month', { dateOfBirth: '1960-02-30' }],
+    ['impossible month', { dateOfBirth: '2000-13-01' }],
     ['empty notifyTo', { notifyTo: [] }],
     ['non-email notifyTo', { notifyTo: ['x'] }],
     ['bad totp secret', { gckeyTotpSecret: 'not-base32!' }],
     ['malformed otpauth link', { gckeyTotpSecret: 'otpauth://[::' }],
   ])('rejects %s', (_label, override) => {
     expect(tenantCreateSchema.safeParse({ ...validTenant, ...override }).success).toBe(false);
+  });
+
+  it('accepts a leap day', () => {
+    expect(tenantCreateSchema.safeParse({ ...validTenant, dateOfBirth: '2000-02-29' }).success).toBe(true);
   });
 
   it('accepts a lowercase id with digits and hyphens', () => {

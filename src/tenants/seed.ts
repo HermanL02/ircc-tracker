@@ -1,5 +1,6 @@
 import type { Env } from '../config/env.validation.js';
-import type { TenantCreate } from './tenant.schema.js';
+import { z } from 'zod';
+import { tenantCreateSchema, type TenantCreate } from './tenant.schema.js';
 
 export const SEED_TENANT_ID = 'default';
 
@@ -18,12 +19,16 @@ export const SEED_ENV_KEYS = [
 
 export type SeedEnv = Pick<Env, (typeof SEED_ENV_KEYS)[number]>;
 
+// The API's tenant rules, except that the seed allows no recipients: with NOTIFY_EMAIL_TO
+// empty the tenant simply gets no emails.
+const seedSchema = tenantCreateSchema.extend({ notifyTo: z.array(z.string()) });
+
 // The `default` tenant built from a single-tenant .env, or null when GCKEY_USERNAME is empty.
-// The env schema has already validated (and normalised) these values. Unlike the API, the seed
-// allows no recipients: with NOTIFY_EMAIL_TO empty the tenant simply gets no emails.
+// The env schema has already validated these values; parsing again applies the same
+// normalisation (trimming) as a tenant created through the API.
 export function seedFromEnv(env: SeedEnv): TenantCreate | null {
   if (!env.GCKEY_USERNAME) return null;
-  return {
+  return seedSchema.parse({
     id: SEED_TENANT_ID,
     name: 'Default',
     enabled: true,
@@ -39,5 +44,5 @@ export function seedFromEnv(env: SeedEnv): TenantCreate | null {
     notifyTo: env.NOTIFY_EMAIL_TO.split(',')
       .map((s) => s.trim())
       .filter(Boolean),
-  };
+  });
 }
