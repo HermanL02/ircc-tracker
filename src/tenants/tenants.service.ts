@@ -27,6 +27,8 @@ const rethrowBadData = (e: unknown): never => {
 @Injectable()
 export class TenantsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(TenantsService.name);
+  private markSeeded!: () => void;
+  private readonly seeded = new Promise<void>((resolve) => (this.markSeeded = resolve));
 
   constructor(
     @InjectRepository(Tenant)
@@ -107,6 +109,14 @@ export class TenantsService implements OnApplicationBootstrap {
         .orIgnore()
         .execute();
     });
+    this.markSeeded();
+  }
+
+  // Resolves once the one-time .env seed above has committed (or was found already done).
+  // Nest does not order onApplicationBootstrap between sibling modules, so code that reads
+  // tenants at start-up waits on this instead of relying on hook order.
+  whenSeeded(): Promise<void> {
+    return this.seeded;
   }
 
   private withSecrets() {

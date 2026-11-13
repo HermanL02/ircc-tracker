@@ -1,7 +1,22 @@
-import { Body, ConflictException, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { ZodPipe } from '../common/pipes/zod.pipe.js';
+import { checksLimit } from '../tracker/tracker.controller.js';
 import { TrackerService } from '../tracker/tracker.service.js';
 import { tenantCreateSchema, tenantUpdateSchema, type TenantCreate, type TenantUpdate } from './tenant.schema.js';
 import { TenantsService } from './tenants.service.js';
@@ -50,5 +65,29 @@ export class TenantsController {
   async remove(@Param('id') id: string): Promise<void> {
     if (this.tracker.isRunning(id)) throw new ConflictException(`A check for tenant ${id} is running; try again later`);
     await this.tenants.remove(id);
+  }
+
+  @Get(':id/status')
+  @ApiOperation({ summary: "The tenant's latest application status, milestones and history" })
+  async status(@Param('id') id: string) {
+    await this.tenants.get(id);
+    return this.tracker.latest(id);
+  }
+
+  @Get(':id/checks')
+  @ApiOperation({ summary: "The tenant's recent checks with what changed in each" })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  async checks(@Param('id') id: string, @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number) {
+    await this.tenants.get(id);
+    return this.tracker.list(id, checksLimit(limit));
+  }
+
+  @Post(':id/checks')
+  @HttpCode(202)
+  @ApiOperation({ summary: "Queue a check for this tenant ahead of the others; returns its queue position (404 if disabled)" })
+  async run(@Param('id') id: string) {
+    const tenant = await this.tenants.get(id);
+    if (!tenant.enabled) throw new NotFoundException(`Tenant ${id} is disabled`);
+    return this.tracker.enqueue(id, 'manual', true);
   }
 }
