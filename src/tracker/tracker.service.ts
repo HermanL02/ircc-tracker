@@ -2,12 +2,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import type { Env } from '../config/env.validation.js';
 import { IrccPortalService } from '../ircc/ircc-portal.service.js';
 import { NotifierService } from '../notify/notifier.service.js';
 import { failureRecipients, tenantSubject } from '../notify/recipients.js';
-import { Tenant } from '../tenants/entities/tenant.entity.js';
+import type { Tenant } from '../tenants/entities/tenant.entity.js';
+import { TenantsService } from '../tenants/tenants.service.js';
 import { Check, type CheckTrigger } from './entities/check.entity.js';
 import { describeChanges, hashSnapshot, type Snapshot } from './lib/snapshot.js';
 import { RunQueue } from './run-queue.js';
@@ -21,15 +22,14 @@ export class TrackerService {
   constructor(
     @InjectRepository(Check)
     private readonly checks: Repository<Check>,
-    @InjectRepository(Tenant)
-    private readonly tenants: Repository<Tenant>,
+    private readonly tenants: TenantsService,
     private readonly portal: IrccPortalService,
     private readonly notifier: NotifierService,
     private readonly config: ConfigService<Env, true>,
   ) {
     this.queue = new RunQueue({
       run: (tenantId, trigger) => this.runCheck(tenantId, trigger),
-      isRunnable: async (tenantId) => (await this.tenants.findOneBy({ id: tenantId }))?.enabled === true,
+      isRunnable: (tenantId) => this.tenants.isEnabled(tenantId),
       gapMs: this.config.get('CHECK_TENANT_GAP_SECONDS', { infer: true }) * 1000,
       sleep: (ms) => sleep(ms),
       now: () => Date.now(),
@@ -48,20 +48,16 @@ export class TrackerService {
 
   // Queues a check for every enabled tenant.
   async enqueueAll(trigger: CheckTrigger): Promise<{ queued: string[] }> {
-    const enabled = await this.tenants.find({ select: { id: true }, where: { enabled: true }, order: { id: 'ASC' } });
-    for (const { id } of enabled) this.queue.enqueue(id, trigger);
-    return { queued: enabled.map((t) => t.id) };
+    const queued = await this.tenants.listEnabledIds();
+    for (const id of queued) this.queue.enqueue(id, trigger);
+    return { queued };
   }
 
   // Signs in, fetches the application, and compares it with the tenant's last successful check.
   // Only the run queue calls this, so two checks never run at once (the lookup form allows
   // 3 attempts per 15 minutes).
   async runCheck(tenantId: string, trigger: CheckTrigger): Promise<void> {
-    const tenant = await this.tenants
-      .createQueryBuilder('t')
-      .addSelect(['t.gckeyPassword', 't.gckeyTotpSecret'])
-      .where('t.id = :id', { id: tenantId })
-      .getOne();
+    const tenant = await this.tenants.getWithSecrets(tenantId);
     if (!tenant) {
       this.logger.warn(`Tenant ${tenantId} not found; check skipped`);
       return;
@@ -130,7 +126,7 @@ export class TrackerService {
       lastUpdated: app.lastUpdated,
       people: check.details!.relations.map((r) => ({ name: `${r.firstName} ${r.lastName}`, milestones: r.milestones })),
       history: check.history,
-      lastChange: await this.checks.findOne({ where: { tenantId, changed: true }, order: { startedAt: 'DESC' } }),
+      lastChange: await this.checks.findOne({ where: { tenantId, status: 'ok', changed: true }, order: { startedAt: 'DESC' } }),
     };
   }
 
@@ -156,12 +152,15 @@ export class TrackerService {
 
   // The tenant's last successful snapshot since its baseline was last reset, or null.
   private async latestSnapshot(tenant: Tenant): Promise<Snapshot | null> {
-    const query = this.checks
-      .createQueryBuilder('c')
-      .addSelect(['c.details', 'c.history'])
-      .where("c.tenant_id = :id AND c.status = 'ok'", { id: tenant.id });
-    if (tenant.baselineAfter) query.andWhere('c.started_at > :baselineAfter', { baselineAfter: tenant.baselineAfter });
-    const prev = await query.orderBy('c.started_at', 'DESC').getOne();
+    const prev = await this.checks.findOne({
+      select: { id: true, details: true, history: true },
+      where: {
+        tenantId: tenant.id,
+        status: 'ok',
+        ...(tenant.baselineAfter ? { startedAt: MoreThan(tenant.baselineAfter) } : {}),
+      },
+      order: { startedAt: 'DESC' },
+    });
     return prev?.details ? { details: prev.details, history: prev.history ?? [] } : null;
   }
 
