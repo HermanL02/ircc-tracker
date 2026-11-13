@@ -22,6 +22,7 @@ Works with any application shown in the [IRCC application status tracker](https:
 - [Run it in the background (Linux)](#run-it-in-the-background-linux)
 - [Configuration](#configuration)
 - [Email alerts](#email-alerts)
+- [Multiple applications](#multiple-applications)
 - [HTTP API](#http-api)
 - [Running on a cloud server](#running-on-a-cloud-server)
 - [Troubleshooting](#troubleshooting)
@@ -38,7 +39,8 @@ Works with any application shown in the [IRCC application status tracker](https:
   - `History (November 1, 2026): We received your proof of completion for the immigration medical exam`
 - **Email alerts** on every change, plus an optional "No update" email after each check with the latest raw tracker data.
 - **Full history in PostgreSQL**: every check and the exact data the tracker returned, so you can see when each step happened.
-- **Small HTTP API**: latest status, past checks, and "check now".
+- **Several applications in one tracker**: add family members' applications through the API, each with its own GCKey account and email recipients. Checks run one at a time.
+- **Small HTTP API**: latest status, past checks, "check now", and managing the applications you watch.
 - **Failure alerts**: one email if checks keep failing (for example, after a password change).
 - **Runs quietly**: real Chrome on an invisible virtual display, with no browser window appearing.
 
@@ -77,7 +79,7 @@ In `.env`, fill in at least:
 - `POSTGRES_PASSWORD`: letters and digits only, e.g. the output of `openssl rand -hex 24`
 - `API_KEYS`: e.g. the output of `openssl rand -hex 32`
 - `GCKEY_USERNAME`, `GCKEY_PASSWORD`, `GCKEY_TOTP_SECRET`
-- all the `IRCC_*` values
+- all the `IRCC_*` values (these create your first tracked application on the first start; see [Multiple applications](#multiple-applications))
 - `CHECK_TIMEZONE`, e.g. `America/Toronto`. Containers run in UTC otherwise.
 - the email settings, if you want alerts
 
@@ -177,19 +179,23 @@ All settings live in `.env`; [`.env.example`](.env.example) documents each one. 
 
 | Variable | Required | Description |
 |---|---|---|
-| `GCKEY_USERNAME`, `GCKEY_PASSWORD` | yes | Your GCKey sign-in |
-| `GCKEY_TOTP_SECRET` | yes | Authenticator secret: the base32 key or the whole `otpauth://` link |
-| `IRCC_SURNAME`, `IRCC_GIVEN_NAME` | yes | As entered in the tracker's lookup form |
-| `IRCC_UCI` | yes | Unique client identifier, digits only |
-| `IRCC_APPLICATION_NUMBER` | yes | e.g. `E001234567` |
-| `IRCC_DATE_OF_BIRTH` | yes | `YYYY-MM-DD` |
-| `IRCC_COUNTRY_OF_BIRTH` | yes | As spelled in the tracker's country list |
 | `DATABASE_URL` | yes | PostgreSQL connection string |
 | `API_KEYS` | yes | Key(s) for the HTTP API (`openssl rand -hex 32`) |
+| `GCKEY_USERNAME`, `GCKEY_PASSWORD` | first start | Your GCKey sign-in |
+| `GCKEY_TOTP_SECRET` | first start | Authenticator secret: the base32 key or the whole `otpauth://` link |
+| `IRCC_SURNAME`, `IRCC_GIVEN_NAME` | first start | As entered in the tracker's lookup form |
+| `IRCC_UCI` | first start | Unique client identifier, digits only |
+| `IRCC_APPLICATION_NUMBER` | first start | e.g. `E001234567` |
+| `IRCC_DATE_OF_BIRTH` | first start | `YYYY-MM-DD` |
+| `IRCC_COUNTRY_OF_BIRTH` | first start | As spelled in the tracker's country list |
 | `CHECK_CRON` | | Schedule, default `17 */2 * * *` (every 2 hours) |
 | `CHECK_TIMEZONE` | | IANA time zone, default: the machine's |
+| `CHECK_TENANT_GAP_SECONDS` | | Pause between two checks when you track several applications, default `300` |
 | `NOTIFY_EVERY_CHECK` | | `true` (default) also emails "No update" |
+| `NOTIFY_EMAIL_TO` | | Your address: recipients of the first application, and a copy of every failure alert |
 | `BROWSER_PROXY_URL` | | Residential proxy for servers (see below) |
+
+The `GCKEY_*` and `IRCC_*` values are read **once**: on the first start they create the application `default` in the database. After that the database is what counts, and the tracker logs that it ignores them. Change them through the [API](#multiple-applications) instead of `.env`. If you set `GCKEY_USERNAME`, the others must be valid too, or the tracker won't start. You can leave them all empty and add applications through the API only.
 
 ## Email alerts
 
@@ -211,7 +217,63 @@ You'll receive:
 | Nothing changed (if `NOTIFY_EVERY_CHECK=true`) | `IRCC: no update (<status>)` |
 | Checks keep failing | `IRCC tracker: N checks in a row failed` |
 
-Every email includes the status, the milestones, and the latest raw tracker responses.
+Every email includes the status, the milestones, and the latest raw tracker responses. Each subject starts with the application's name, e.g. `[Default] IRCC: no update (inProgress)`.
+
+Each application has its own recipients (`notifyTo`). Failure alerts also go to `NOTIFY_EMAIL_TO`, so you hear about a wrong password on a family member's account. `NOTIFY_EMAIL_TO` is optional.
+
+## Multiple applications
+
+One tracker can watch several applications, for example yours and your parents'. Each application (a *tenant* in the API) has its own GCKey account, lookup details, email recipients, history and failure alerts. Applications live in the database and you manage them through the [HTTP API](#http-api) while the tracker runs; no restart needed.
+
+**Your first application.** On the first start after installing (or upgrading), the tracker creates the application `default` from the `GCKEY_*`, `IRCC_*` and `NOTIFY_EMAIL_TO` values in `.env`, and earlier checks become its history. This happens only once: after that, those `.env` values are ignored, and deleting `default` doesn't bring it back on the next start. Existing setups keep working with no change to `.env`.
+
+**Add an application.** `id` is a short name you choose (lowercase letters, digits and hyphens; it can't be changed later). `name` starts each email subject.
+
+```bash
+curl -s -X POST -H "x-api-key: $KEY" -H 'content-type: application/json' localhost:3460/tenants -d '{
+  "id": "mom",
+  "name": "Mom",
+  "gckeyUsername": "...",
+  "gckeyPassword": "...",
+  "gckeyTotpSecret": "otpauth://totp/...",
+  "surname": "Doe",
+  "givenName": "Jane",
+  "uci": "12345678",
+  "applicationNumber": "E001234567",
+  "dateOfBirth": "1965-03-14",
+  "countryOfBirth": "India",
+  "notifyTo": ["mom@example.com", "you@example.com"]
+}'
+```
+
+Invalid values return `400` with the reason for each field (the same rules as for `.env`); an `id` that's already taken returns `409`.
+
+**List, change, pause and delete:**
+
+```bash
+curl -s -H "x-api-key: $KEY" localhost:3460/tenants                     # all applications
+curl -s -H "x-api-key: $KEY" localhost:3460/tenants/mom/status          # latest status of one
+curl -s -X PATCH -H "x-api-key: $KEY" -H 'content-type: application/json' \
+     localhost:3460/tenants/mom -d '{"gckeyPassword": "new password"}'  # change only what you send
+curl -s -X PATCH -H "x-api-key: $KEY" -H 'content-type: application/json' \
+     localhost:3460/tenants/mom -d '{"enabled": false}'                 # pause its checks
+curl -s -X DELETE -H "x-api-key: $KEY" localhost:3460/tenants/mom       # delete it and its history
+```
+
+The API never returns a password or authenticator secret, only `hasPassword` and `hasTotpSecret`. Leaving them out of a `PATCH` keeps them as they are. A `DELETE` while that application's check is running returns `409`; try again a minute later.
+
+**Check one now:**
+
+```bash
+curl -s -X POST -H "x-api-key: $KEY" localhost:3460/tenants/mom/checks   # {"position": 1}
+curl -s -H "x-api-key: $KEY" "localhost:3460/tenants/mom/checks?limit=1" # the result, once it ran
+```
+
+**One check at a time.** All checks (scheduled, at start-up and "check now") wait in one queue, and only one Chrome runs at a time. Between two checks the tracker pauses `CHECK_TENANT_GAP_SECONDS` (default 300, i.e. 5 minutes), because the lookup form allows 3 attempts per 15 minutes and IRCC may count them per IP address rather than per account. So with the default 2-hour schedule, one tracker fits about 20 applications. "Check now" puts the application at the front of the queue, but it still waits for the pause, so it can take up to 5 minutes to start. `POST /checks` queues every enabled application; one that is already waiting isn't queued twice.
+
+**Changing whose application it is.** A `PATCH` that changes `gckeyUsername`, `uci`, `applicationNumber`, `surname`, `givenName`, `dateOfBirth` or `countryOfBirth` starts a fresh baseline: the next successful check sends the "watching your application" email instead of a list of differences from the old application. Earlier checks stay in the history. Changing the name, recipients, password or secret doesn't reset anything.
+
+Each application other than `default` keeps its own Chrome profile in `BROWSER_PROFILE_DIR/tenants/<id>`; `default` keeps using `BROWSER_PROFILE_DIR` itself, so an upgrade doesn't lose its cookies.
 
 ## HTTP API
 
@@ -219,11 +281,21 @@ The API listens on `HOST:PORT` (default `127.0.0.1:3460`). Every route except `/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/status` | Latest status, milestones, readable history and the last change |
-| `GET` | `/checks?limit=20` | Recent checks and what changed in each |
+| `GET` | `/tenants` | All applications (without passwords or secrets) |
+| `POST` | `/tenants` | Add an application |
+| `GET` | `/tenants/:id` | One application |
+| `PATCH` | `/tenants/:id` | Change an application; send only the fields to change |
+| `DELETE` | `/tenants/:id` | Delete an application and its checks (`409` while its check runs) |
+| `GET` | `/tenants/:id/status` | Latest status, milestones, readable history and the last change |
+| `GET` | `/tenants/:id/checks?limit=20` | Recent checks and what changed in each |
+| `POST` | `/tenants/:id/checks` | Check this application next; returns its place in the queue (`404` if paused) |
+| `POST` | `/checks` | Queue a check of every enabled application; returns their ids |
 | `GET` | `/checks/:id` | One check including the raw IRCC responses |
-| `POST` | `/checks` | Run a check now (about a minute) |
+| `GET` | `/status` | Same as `/tenants/default/status` (`404` if there's no `default`) |
+| `GET` | `/checks?limit=20` | Same as `/tenants/default/checks` (`404` if there's no `default`) |
 | `GET` | `/health` | Database health (no key needed) |
+
+Checks run in the background: `POST /checks` and `POST /tenants/:id/checks` answer `202` right away, and the result shows up in the check list about a minute after the check starts.
 
 ```bash
 curl -s -H "x-api-key: $KEY" localhost:3460/status
@@ -241,9 +313,9 @@ The same `docker-compose.yml` works on a VPS or with [Coolify](https://coolify.i
 | `GCKey sign-in failed: "Security Check Failed"` | hCaptcha rejected the browser. Use Google Chrome (`BROWSER_CHANNEL=chrome`), keep `BROWSER_HEADLESS=false`, and keep `BROWSER_PROFILE_DIR` between runs. Several sign-ins in a short time can also trigger it; wait and try again. |
 | Stuck on the GCKey page until `Timeout` | hCaptcha showed an image challenge, usually because the browser was headless. |
 | `Failed at "open sign-in"`, `The request could not be satisfied` | Your IP is a datacenter IP. Use a residential proxy or run at home. |
-| `Application lookup was rejected` | An `IRCC_*` value doesn't match IRCC's records. The form allows **3 attempts per 15 minutes**. |
+| `Application lookup was rejected` | A lookup detail (`IRCC_*` in `.env`, or the application's fields in the API) doesn't match IRCC's records. The form allows **3 attempts per 15 minutes**. |
 | Two-factor code rejected | Wrong `GCKEY_TOTP_SECRET`, or the computer's clock is off (`timedatectl`). |
-| What did the page look like? | See `BROWSER_PROFILE_DIR/last-failure.png`. |
+| What did the page look like? | See `last-failure.png` in that application's Chrome profile: `BROWSER_PROFILE_DIR` for `default`, `BROWSER_PROFILE_DIR/tenants/<id>` for the others. |
 
 ## FAQ
 
@@ -270,11 +342,11 @@ Yes. It reads whatever the IRCC application status tracker shows for your applic
 
 ### Can it track several applications or family members?
 
-Every person on the application is included: milestones are reported per person. For a separate application number, run a second copy with its own `.env`, `NAME` and ports.
+Yes. Every person on one application is included: milestones are reported per person. For a separate application number, with the same or a different GCKey account, add it through the API; see [Multiple applications](#multiple-applications).
 
 ## Security and privacy
 
-- Credentials live only in your `.env` (keep it `chmod 600`) and never leave your machine, except to sign in to Canada.ca and to send emails to you.
+- Credentials live in your `.env` (keep it `chmod 600`) and in the PostgreSQL database, unencrypted, like `.env`. They never leave your machine, except to sign in to Canada.ca and to send emails to you. The API never returns them. Keep Postgres bound to localhost.
 - The authenticator code is generated locally; no third-party service is involved.
 - The API binds to `127.0.0.1` by default and requires an API key.
 - The database stores your application data, so treat it like any other personal document.
