@@ -85,13 +85,15 @@ export class TenantsService implements OnApplicationBootstrap {
   // existing checks. `env_seeded` is set either way, so deleting every tenant later never
   // brings `default` back; from then on the database is the source of truth.
   async onApplicationBootstrap(): Promise<void> {
-    const env = Object.fromEntries(SEED_ENV_KEYS.map((key) => [key, this.config.get(key, { infer: true })])) as SeedEnv;
-    const seed = seedFromEnv(env);
     await this.dataSource.transaction(async (manager) => {
       if (await manager.existsBy(AppState, { key: ENV_SEEDED })) {
-        if (seed) this.logger.log('GCKEY_*/IRCC_* in .env are ignored; tenants live in the database');
+        if (this.config.get('GCKEY_USERNAME', { infer: true })) {
+          this.logger.log('GCKEY_*/IRCC_* in .env are ignored; tenants live in the database');
+        }
         return;
       }
+      const env = Object.fromEntries(SEED_ENV_KEYS.map((key) => [key, this.config.get(key, { infer: true })])) as SeedEnv;
+      const seed = seedFromEnv(env);
       if (seed) {
         await manager.insert(Tenant, seed);
         const { affected } = await manager.update(Check, { tenantId: IsNull() }, { tenantId: SEED_TENANT_ID });

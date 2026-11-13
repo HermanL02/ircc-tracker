@@ -49,6 +49,11 @@ describe('seedFromEnv', () => {
     expect(seed?.surname).toBe('Doe');
   });
 
+  it('names the env variables when a value is only whitespace', () => {
+    const env = envSchema.parse({ ...base, ...credentials, IRCC_SURNAME: ' ', IRCC_GIVEN_NAME: '  ' });
+    expect(() => seedFromEnv(env)).toThrow(/IRCC_SURNAME: .*; IRCC_GIVEN_NAME: /);
+  });
+
   it('seeds with no recipients when NOTIFY_EMAIL_TO is empty', () => {
     expect(seedFromEnv(envSchema.parse({ ...base, ...credentials }))?.notifyTo).toEqual([]);
   });
