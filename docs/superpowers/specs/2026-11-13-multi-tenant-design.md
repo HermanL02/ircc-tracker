@@ -65,7 +65,7 @@ base32 or `otpauth://`, UCI 8–10 digits, DOB `YYYY-MM-DD`), moved into a share
 - `POST /tenants` — create (full body, validated).
 - `PATCH /tenants/:id` — partial update; omitted password/secret are left unchanged.
 - `DELETE /tenants/:id` — deletes the tenant and its checks.
-- `GET /tenants/:id/status`, `GET /tenants/:id/checks?limit=`, `POST /tenants/:id/checks` (run one tenant now; blocks ~1 min; 409 if any check is running).
+- `GET /tenants/:id/status`, `GET /tenants/:id/checks?limit=`, `POST /tenants/:id/checks` — queue one tenant now at the front (see Run queue); returns 202 with its queue position; result via `GET /tenants/:id/checks`.
 - `GET /checks/:id` stays global.
 - `POST /checks` — queue all enabled tenants (already-queued tenants are not added twice); returns 202.
 - `GET /status` and `GET /checks` are kept for back-compat and act on the `default` tenant if it exists (404 otherwise).
